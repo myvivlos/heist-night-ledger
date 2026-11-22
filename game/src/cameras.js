@@ -1,33 +1,60 @@
-// Wall-mounted security cameras: sweeping fixed arcs, terminal disable state, and cyan cones.
-import { buildVisionPolygon } from './levels.js';
+import { computeVisionPolygon, tileCenter } from './levels.js';
 
-export function createCameras(specs, rng) {
-  return specs.map((spec, index) => ({
-    id: index + 1,
-    x: spec.x,
-    y: spec.y,
-    minAngle: spec.minAngle,
-    maxAngle: spec.maxAngle,
-    speed: spec.speed,
-    range: spec.range,
-    fov: spec.fov,
-    phase: rng.range(0, Math.PI * 2),
-    angle: (spec.minAngle + spec.maxAngle) * 0.5,
-    disabled: false,
-    conePoly: [],
-  }));
+export const CAMERA_FOV = (55 * Math.PI) / 180; // ~55 degrees sweeping cyan arc
+
+/**
+ * Instantiates sweeping security cameras for the current level.
+ */
+export function createCameras(level) {
+  const spec = level.spec;
+  return spec.cameras.map((c, idx) => {
+    const pos = tileCenter(c.col, c.row);
+    return {
+      id: idx,
+      x: pos.x,
+      y: pos.y,
+      baseAngle: c.baseAngle,
+      sweepAmp: c.sweepAmp,
+      speed: spec.cameraSpeed,
+      clock: c.phase ?? idx * 1.3,
+      angle: c.baseAngle + Math.sin(c.phase ?? idx * 1.3) * c.sweepAmp,
+      fov: CAMERA_FOV,
+      range: spec.cameraRange,
+      active: true,
+      spotting: false,
+      cone: [],
+    };
+  });
 }
 
-export function updateCameras(cameras, dt, rects, smokes) {
-  for (let i = 0; i < cameras.length; i += 1) {
-    const cam = cameras[i];
-    if (cam.disabled) {
-      cam.conePoly = [];
+/**
+ * Updates camera sweep arcs and computes raycasted cone polygons.
+ */
+export function updateCameras(cameras, level, dt) {
+  for (const cam of cameras) {
+    if (!cam.active) {
+      cam.spotting = false;
+      cam.cone = [];
       continue;
     }
-    cam.phase += dt * cam.speed;
-    const t = 0.5 - 0.5 * Math.cos(cam.phase);
-    cam.angle = cam.minAngle + (cam.maxAngle - cam.minAngle) * t;
-    cam.conePoly = buildVisionPolygon(cam.x, cam.y, cam.angle, cam.fov, cam.range, rects, smokes, 24);
+    cam.clock += dt * cam.speed;
+    cam.angle = cam.baseAngle + Math.sin(cam.clock) * cam.sweepAmp;
+    cam.cone = computeVisionPolygon(cam.x, cam.y, cam.angle, cam.fov, cam.range, level, 34);
   }
+}
+
+/**
+ * Disables all cameras when the security terminal is hacked.
+ */
+export function disableAllCameras(cameras) {
+  let count = 0;
+  for (const cam of cameras) {
+    if (cam.active) {
+      cam.active = false;
+      cam.spotting = false;
+      cam.cone = [];
+      count++;
+    }
+  }
+  return count;
 }

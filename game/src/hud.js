@@ -1,167 +1,168 @@
-// Top HUD bar: segmented red ALARM meter, TARGET progress/status, LOOT, TOOLS, LEVEL, TIME.
-import { HUD_HEIGHT, MAX_SMOKE, VIEW_WIDTH } from './levels.js';
-
-const FONT = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-
 function formatTime(seconds) {
-  const total = Math.max(0, Math.floor(seconds + 1e-6));
+  const total = Math.max(0, Math.floor(seconds));
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
-function drawPill(ctx, x, y, w, h, fill, stroke) {
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 5);
-  ctx.fill();
-  if (stroke) {
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
-}
+/**
+ * Draws the top tactical HUD bar and bottom control strip.
+ */
+export function renderHud(ctx, state) {
+  const { alarm, level, loot, player, levelIndex, totalLevels, elapsed, scene } = state;
 
-export function drawHud(ctx, state) {
+  // Top HUD bar background
   ctx.save();
+  ctx.fillStyle = '#090f1d';
+  ctx.fillRect(0, 0, 1280, 64);
+  ctx.strokeStyle = '#253759';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 64);
+  ctx.lineTo(1280, 64);
+  ctx.stroke();
 
-  ctx.fillStyle = '#070c17';
-  ctx.fillRect(0, 0, VIEW_WIDTH, HUD_HEIGHT);
-  ctx.fillStyle = '#1e293b';
-  ctx.fillRect(0, HUD_HEIGHT - 2, VIEW_WIDTH, 2);
-
-  // 1. ALARM (segmented red meter with clear borders + percentage)
-  const alarmX = 24;
-  ctx.font = `700 12px ${FONT}`;
-  ctx.fillStyle = state.alarm >= 70 ? '#f87171' : '#94a3b8';
+  // 1. ALARM segmented meter + border + percentage
+  const alarmPct = Math.round(alarm);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'bold 11px ui-monospace, monospace';
   ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('ALARM', alarmX, 17);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('ALARM', 28, 22);
 
+  const meterX = 28;
+  const meterY = 29;
   const segments = 10;
   const segW = 14;
-  const segH = 14;
-  const segGap = 4;
-  const filledSegments = Math.ceil((state.alarm / 100) * segments);
-  for (let i = 0; i < segments; i += 1) {
-    const sx = alarmX + i * (segW + segGap);
-    const active = i < filledSegments && state.alarm > 0.5;
-    ctx.fillStyle = active ? (i >= 7 ? '#f87171' : '#ef4444') : '#152033';
-    ctx.fillRect(sx, 27, segW, segH);
-    ctx.strokeStyle = active ? '#fecaca' : '#475569';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(sx + 0.75, 27.75, segW - 1.5, segH - 1.5);
+  const segGap = 3;
+  const meterW = segments * segW + (segments - 1) * segGap + 6;
+  const meterH = 22;
+
+  ctx.fillStyle = '#050811';
+  ctx.fillRect(meterX, meterY, meterW, meterH);
+  ctx.strokeStyle = alarmPct >= 60 ? '#ff4d6d' : '#3a4f7a';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(meterX, meterY, meterW, meterH);
+
+  const filledSegments = Math.ceil((alarmPct / 100) * segments);
+  for (let i = 0; i < segments; i++) {
+    const sx = meterX + 3 + i * (segW + segGap);
+    const sy = meterY + 3;
+    ctx.fillStyle = i < filledSegments ? '#ff3b5c' : '#162138';
+    ctx.fillRect(sx, sy, segW, meterH - 6);
   }
 
-  ctx.font = `700 16px ${MONO}`;
-  ctx.fillStyle = state.alarm >= 70 ? '#fca5a5' : '#e2e8f0';
-  ctx.fillText(`${Math.round(state.alarm)}%`, alarmX + segments * (segW + segGap) + 8, 34);
+  ctx.fillStyle = alarmPct > 0 ? '#ff6b85' : '#e2e8f0';
+  ctx.font = 'bold 16px ui-monospace, monospace';
+  ctx.fillText(`${alarmPct}%`, meterX + meterW + 10, 46);
 
-  // 2. TARGET / INTERACTION PROGRESS
-  const objX = 290;
-  const objW = 245;
-  const interact = state.player ? state.player.activeInteract : null;
-  const cracking = interact && interact.kind === 'safe';
-  const hacking = interact && interact.kind === 'terminal';
+  // 2. TARGET (shows cracking progress or completed state on win)
+  const targetX = 278;
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.fillText('TARGET', targetX, 22);
 
-  if (state.screen === 'win') {
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#fbbf24';
-    ctx.fillText('TARGET', objX, 17);
-    drawPill(ctx, objX, 26, objW, 18, 'rgba(251, 191, 36, 0.2)', '#fbbf24');
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#fef08a';
-    ctx.fillText('JOB COMPLETE — ESCAPED', objX + 10, 35);
-  } else if (state.screen === 'lose') {
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#f87171';
-    ctx.fillText('TARGET', objX, 17);
-    drawPill(ctx, objX, 26, objW, 18, 'rgba(239, 68, 68, 0.2)', '#ef4444');
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#fecaca';
-    ctx.fillText('LOCKDOWN — MISSION FAILED', objX + 10, 35);
-  } else if (cracking || hacking) {
-    const label = cracking ? 'CRACKING SAFE' : 'HACKING CAMERAS';
-    const color = cracking ? '#fbbf24' : '#22d3ee';
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = color;
-    ctx.fillText(`${label}  ${Math.round(interact.progress * 100)}%`, objX, 17);
+  let targetText = 'CRACK VAULT SAFE';
+  let targetColor = '#ffd166';
+  if (scene === 'win') {
+    targetText = 'VAULT CLEARED · ESCAPED';
+    targetColor = '#4ade80';
+  } else if (scene === 'lose') {
+    targetText = 'LOCKDOWN TRIGGERED';
+    targetColor = '#ff4d6d';
+  } else if (level.safe.cracked) {
+    targetText = 'REACH GOLD EXIT';
+    targetColor = '#ffd166';
+  } else if (level.safe.progress > 0) {
+    const pct = Math.round((level.safe.progress / level.safe.duration) * 100);
+    targetText = `CRACKING SAFE ${pct}%`;
+  }
 
-    drawPill(ctx, objX, 27, objW, 14, '#131d31', '#334155');
-    const fillW = Math.max(4, Math.round((objW - 4) * interact.progress));
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.roundRect(objX + 2, 29, fillW, 10, 3);
-    ctx.fill();
-  } else if (state.level && state.level.safe.cracked) {
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#fbbf24';
-    ctx.fillText('TARGET', objX, 17);
-    drawPill(ctx, objX, 26, objW, 18, 'rgba(245, 158, 11, 0.16)', '#f59e0b');
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#fde68a';
-    ctx.fillText('LEDGER SECURED — REACH EXIT', objX + 10, 35);
-  } else {
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('TARGET', objX, 17);
-    drawPill(ctx, objX, 26, objW, 18, '#101829', '#334155');
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = '#fbbf24';
-    ctx.fillText('CRACK VAULT SAFE (HOLD E 3s)', objX + 10, 35);
+  ctx.fillStyle = targetColor;
+  ctx.font = 'bold 14px ui-monospace, monospace';
+  ctx.fillText(targetText, targetX, 44);
+
+  // Mini safe progress bar inside HUD when cracking
+  if (scene === 'play' && !level.safe.cracked && level.safe.progress > 0) {
+    const barX = targetX;
+    const barY = 50;
+    const barW = 164;
+    ctx.fillStyle = '#131d33';
+    ctx.fillRect(barX, barY, barW, 5);
+    ctx.fillStyle = '#ffd166';
+    ctx.fillRect(barX, barY, barW * (level.safe.progress / level.safe.duration), 5);
   }
 
   // 3. LOOT
-  const lootX = 580;
-  ctx.font = `700 12px ${FONT}`;
+  const lootX = 532;
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('LOOT', lootX, 17);
-  ctx.font = `800 22px ${MONO}`;
-  ctx.fillStyle = '#fbbf24';
-  ctx.fillText(`$${state.loot.toLocaleString()}`, lootX, 36);
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.fillText('LOOT', lootX, 22);
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 18px ui-monospace, monospace';
+  ctx.fillText(`$${loot.toLocaleString()}`, lootX, 46);
 
-  // 4. TOOLS (smoke bomb count + keycard state, crisp even when disabled/missing)
-  const toolsX = 760;
-  ctx.font = `700 12px ${FONT}`;
+  // 4. TOOLS (smoke count + keycard state always legible even when disabled)
+  const toolsX = 678;
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('TOOLS', toolsX, 17);
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.fillText('TOOLS', toolsX, 22);
 
-  const smokeLeft = state.player ? state.player.smokeLeft : MAX_SMOKE;
-  drawPill(ctx, toolsX, 25, 110, 20, '#101829', smokeLeft > 0 ? '#475569' : '#334155');
-  ctx.font = `700 12px ${FONT}`;
-  ctx.fillStyle = smokeLeft > 0 ? '#e2e8f0' : '#94a3b8';
-  ctx.fillText(`SMOKE [Q] ${smokeLeft}/${MAX_SMOKE}`, toolsX + 8, 35);
+  // Smoke badge
+  const hasSmoke = player.smokeCount > 0;
+  ctx.fillStyle = hasSmoke ? '#12263a' : '#101829';
+  ctx.strokeStyle = hasSmoke ? '#60a5fa' : '#475b7f';
+  ctx.lineWidth = 1.4;
+  ctx.fillRect(toolsX, 29, 108, 22);
+  ctx.strokeRect(toolsX, 29, 108, 22);
+  ctx.fillStyle = hasSmoke ? '#e2e8f0' : '#9fb0cc';
+  ctx.font = 'bold 12px ui-monospace, monospace';
+  ctx.fillText(`SMOKE ${player.smokeCount}/2`, toolsX + 8, 44);
 
-  const hasKey = Boolean(state.player && state.player.hasKeycard);
-  const usedKey = Boolean(state.player && state.player.keycardUsed);
-  const keyFill = hasKey ? 'rgba(56, 189, 248, 0.22)' : '#121d31';
-  const keyStroke = hasKey ? '#38bdf8' : '#64748b';
-  const keyText = hasKey ? 'KEYCARD READY' : usedKey ? 'KEYCARD USED' : 'NO KEYCARD';
-  const keyTextColor = hasKey ? '#7dd3fc' : usedKey ? '#cbd5e1' : '#cbd5e1';
-  drawPill(ctx, toolsX + 118, 25, 114, 20, keyFill, keyStroke);
-  ctx.font = `700 11px ${FONT}`;
-  ctx.fillStyle = keyTextColor;
-  ctx.fillText(keyText, toolsX + 126, 35);
+  // Keycard badge
+  const cardX = toolsX + 118;
+  const cardHeld = player.keycard === 'held';
+  const cardLabel =
+    player.keycard === 'held'
+      ? 'CARD HELD'
+      : player.keycard === 'used'
+        ? 'CARD USED'
+        : 'CARD NONE';
+  ctx.fillStyle = cardHeld ? '#0d2e3d' : '#101829';
+  ctx.strokeStyle = cardHeld ? '#38e8ff' : '#475b7f';
+  ctx.fillRect(cardX, 29, 104, 22);
+  ctx.strokeRect(cardX, 29, 104, 22);
+  ctx.fillStyle = cardHeld ? '#38e8ff' : '#9fb0cc';
+  ctx.fillText(cardLabel, cardX + 8, 44);
 
   // 5. LEVEL
-  const lvlX = 1035;
-  ctx.font = `700 12px ${FONT}`;
+  const levelX = 954;
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('LEVEL', lvlX, 17);
-  ctx.font = `800 20px ${MONO}`;
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.fillText('LEVEL', levelX, 22);
   ctx.fillStyle = '#f8fafc';
-  ctx.fillText(`${state.levelIndex + 1}/${state.totalLevels}`, lvlX, 36);
+  ctx.font = 'bold 17px ui-monospace, monospace';
+  ctx.fillText(`${levelIndex + 1}/${totalLevels}`, levelX, 46);
 
   // 6. TIME
-  const timeX = 1256;
-  ctx.textAlign = 'right';
-  ctx.font = `700 12px ${FONT}`;
+  const timeX = 1110;
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('TIME', timeX, 17);
-  ctx.font = `800 20px ${MONO}`;
-  ctx.fillStyle = '#e2e8f0';
-  ctx.fillText(formatTime(state.time), timeX, 36);
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.fillText('TIME', timeX, 22);
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 18px ui-monospace, monospace';
+  ctx.fillText(formatTime(elapsed), timeX, 46);
 
+  // Bottom micro-bar during play
+  ctx.fillStyle = '#070c17';
+  ctx.fillRect(0, 688, 1280, 32);
+  ctx.fillStyle = '#7b8eb0';
+  ctx.font = '12px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    `${level.spec.name}   ·   WASD/ARROWS MOVE   ·   SHIFT CROUCH   ·   SPACE SPRINT   ·   E INTERACT / CRACK   ·   Q SMOKE   ·   R RESTART`,
+    640,
+    708,
+  );
   ctx.restore();
 }

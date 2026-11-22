@@ -12,16 +12,30 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
+const HEIST_TITLE = 'NIGHT LEDGER';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
+function countFiles(dir: string): number {
+  let total = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    total += entry.isDirectory() ? countFiles(join(dir, entry.name)) : 1;
+  }
+  return total;
+}
+
+if (!existsSync(join(here, 'game', 'index.html'))) {
+  throw new Error(`${HEIST_TITLE}: missing game/index.html entrypoint`);
+}
+
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
+console.log(`${HEIST_TITLE}: handed over ${countFiles(join(out, 'game'))} game files.`);
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 

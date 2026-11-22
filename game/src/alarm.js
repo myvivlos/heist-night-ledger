@@ -1,9 +1,4 @@
-// Detection maths, shadow/smoke concealment modifiers, and segmented alarm meter fill/decay.
-import { castVisionRay, getSolidRects, pointInRect } from './levels.js';
-
-const ALARM_DECAY_PER_SEC = 15;
-const SHADOW_DECAY_BONUS = 6;
-const SMOKE_DECAY_BONUS = 10;
+import { hasLineOfSight, isPointInShadow, isPointInSmoke } from './levels.js';
 
 function angleDiff(a, b) {
   let d = a - b;
@@ -12,101 +7,120 @@ function angleDiff(a, b) {
   return Math.abs(d);
 }
 
-export function isPlayerInShadow(player, shadows) {
-  for (let i = 0; i < shadows.length; i += 1) {
-    if (pointInRect(player.x, player.y, shadows[i])) return true;
-  }
-  return false;
-}
-
-export function isPlayerInSmoke(player, smokes) {
-  for (let i = 0; i < smokes.length; i += 1) {
-    const s = smokes[i];
-    const dx = player.x - s.x;
-    const dy = player.y - s.y;
-    const effectiveR = s.radius * 0.88;
-    if (dx * dx + dy * dy <= effectiveR * effectiveR) return true;
-  }
-  return false;
-}
-
-function coneExposure(player, origin, rects, smokes, inShadow, isSprinting, isCrouching) {
-  const dx = player.x - origin.x;
-  const dy = player.y - origin.y;
+function isInVisionCone(ox, oy, facing, fov, range, px, py, level) {
+  const dx = px - ox;
+  const dy = py - oy;
   const dist = Math.hypot(dx, dy);
-  const stanceRangeMul = isCrouching ? 0.78 : isSprinting ? 1.2 : 1.0;
-  const shadowRangeMul = inShadow && !isSprinting ? 0.48 : 1.0;
-  const effectiveRange = origin.range * stanceRangeMul * shadowRangeMul;
-  if (dist > effectiveRange) return 0;
+  if (dist > range) return { seen: false, dist };
 
-  const angleToPlayer = Math.atan2(dy, dx);
-  if (angleDiff(angleToPlayer, origin.angle) > origin.fov * 0.5) return 0;
+  const targetAngle = Math.atan2(dy, dx);
+  if (angleDiff(targetAngle, facing) > fov * 0.5) {
+    return { seen: false, dist };
+  }
 
-  const clearDist = castVisionRay(origin.x, origin.y, angleToPlayer, dist + 2, rects, smokes);
-  if (clearDist < dist - player.radius * 0.55) return 0;
+  if (!hasLineOfSight(ox, oy, px, py, level)) {
+    return { seen: false, dist };
+  }
 
-  const proximity = 1 - Math.min(1, dist / effectiveRange);
-  const baseRate = 58 + proximity * 82;
-  const stanceRate = isCrouching ? 0.48 : isSprinting ? 1.55 : 1.0;
-  const shadowRate = inShadow && !isSprinting ? 0.45 : 1.0;
-  return baseRate * stanceRate * shadowRate;
+  return { seen: true, dist };
 }
 
+/**
+ * Evaluates guard + camera detection against the thief and updates the alarm meter (0..100).
+ */
 export function updateAlarm(state, dt, audio) {
-  const { player, level, guards, cameras, smokes } = state;
-  const rects = getSolidRects(level);
-  const inShadow = isPlayerInShadow(player, level.shadows);
-  const inSmoke = isPlayerInSmoke(player, smokes);
+  const { player, guards, cameras, level } = state;
+  const inShadow = isPointInShadow(player.x, player.y, level);
+  const inSmoke = isPointInSmoke(player.x, player.y, level);
   player.inShadow = inShadow;
   player.inSmoke = inSmoke;
 
-  let maxRate = 0;
-  let spotter = null;
+  // Stance + cover visibility factor
+  let visibility = 1.0;
+  if (player.stance === 'crouch') visibility *= 0.55;
+  else if (player.stance === 'sprint') visibility *= 1.35;
+  if (inShadow) visibility *= 0.5;
+  if (inSmoke) visibility = 0; // Smoke completely conceals the thief
 
-  if (!inSmoke && player.ventCooldown <= 0.15) {
-    for (let i = 0; i < guards.length; i += 1) {
-      const g = guards[i];
-      const rate = coneExposure(player, g, rects, smokes, inShadow, player.sprinting, player.crouching);
-      if (rate > maxRate) {
-        maxRate = rate;
-        spotter = { type: 'guard', id: g.id };
+  let maxFillRate = 0;
+  let spotterReason = null;
+
+  if (visibility > 0) {
+    for (const g of guards) {
+      const distDirect = Math.hypot(player.x - g.x, player.y - g.y);
+      // Direct bump check if the thief brushes into a guard
+      if (distDirect < g.radius + player.radius + 4) {
+        maxFillRate = Math.max(maxFillRate, 130);
+        spotterReason = 'Walked straight into a patrol guard.';
+        g.alertLevel = 2;
+        continue;
       }
 
-      const d = Math.hypot(player.x - g.x, player.y - g.y);
-      if (player.sprinting && d < 62) {
-        const noiseRate = 52;
-        if (noiseRate > maxRate) {
-          maxRate = noiseRate;
-          spotter = { type: 'noise', id: g.id };
+      const check = isInVisionCone(g.x, g.y, g.angle, g.fov, g.range, player.x, player.y, level);
+      if (check.seen) {
+        const proximity = 1 - Math.min(1, check.dist / g.range) * 0.45;
+        const rate = 78 * proximity * visibility;
+        if (rate > maxFillRate) {
+          maxFillRate = rate;
+          spotterReason = 'Caught inside a patrol guard vision cone.';
         }
+        g.alertLevel = 2;
+      } else if (g.alertLevel === 2) {
+        g.alertLevel = 1;
+        g.investigateTimer = Math.max(g.investigateTimer, 0.8);
       }
     }
 
-    for (let i = 0; i < cameras.length; i += 1) {
-      const c = cameras[i];
-      if (c.disabled) continue;
-      const rate = coneExposure(player, c, rects, smokes, inShadow, player.sprinting, player.crouching);
-      if (rate > maxRate) {
-        maxRate = rate;
-        spotter = { type: 'camera', id: c.id };
+    for (const cam of cameras) {
+      if (!cam.active) continue;
+      const check = isInVisionCone(cam.x, cam.y, cam.angle, cam.fov, cam.range, player.x, player.y, level);
+      if (check.seen) {
+        const proximity = 1 - Math.min(1, check.dist / cam.range) * 0.4;
+        const rate = 68 * proximity * visibility;
+        if (rate > maxFillRate) {
+          maxFillRate = rate;
+          spotterReason = 'Tracked by a security camera arc.';
+        }
+        cam.spotting = true;
+      } else {
+        cam.spotting = false;
       }
+    }
+  } else {
+    for (const g of guards) {
+      if (g.alertLevel === 2) g.alertLevel = 1;
+    }
+    for (const cam of cameras) {
+      cam.spotting = false;
     }
   }
 
-  const prevTier = Math.floor(state.alarm / 25);
-  state.spotted = maxRate > 0;
-
-  if (maxRate > 0) {
-    state.alarm = Math.min(100, state.alarm + maxRate * dt);
-    state.lastSpotter = spotter;
-    const newTier = Math.floor(state.alarm / 25);
-    if (newTier > prevTier && state.alarm < 100 && audio) {
-      audio.alarmPing(newTier);
-    }
+  if (maxFillRate > 0) {
+    state.alarm = Math.min(100, state.alarm + maxFillRate * dt);
+    state.alarmPeak = Math.max(state.alarmPeak, state.alarm);
+    state.alarmDecayDelay = 0.5;
+    state.spottedBy = spotterReason;
+    if (audio) audio.playAlarmPing(state.alarm, state.elapsed);
   } else {
-    const decay = ALARM_DECAY_PER_SEC + (inShadow ? SHADOW_DECAY_BONUS : 0) + (inSmoke ? SMOKE_DECAY_BONUS : 0);
-    state.alarm = Math.max(0, state.alarm - decay * dt);
+    if (state.alarmDecayDelay > 0) {
+      state.alarmDecayDelay = Math.max(0, state.alarmDecayDelay - dt);
+    } else if (state.alarm > 0) {
+      state.alarm = Math.max(0, state.alarm - 22 * dt);
+    }
   }
 
   return state.alarm >= 100;
+}
+
+/**
+ * Forces a realistic alarm catch through the real state fields (used by ?scene=lose).
+ */
+export function triggerSpotAlarm(state, reason = 'Caught inside a patrol guard vision cone.') {
+  state.alarm = 100;
+  state.alarmPeak = 100;
+  state.alarmDecayDelay = 1.0;
+  state.spottedBy = reason;
+  if (state.guards.length > 0) {
+    state.guards[0].alertLevel = 2;
+  }
 }

@@ -1,374 +1,501 @@
-// Room blueprints for the 3 levels plus collision and raycasted vision geometry.
+/**
+ * Room layouts (30x15 grid @ 40px tiles = 1200x600 playfield),
+ * shared collision helpers, and raycasted vision geometry.
+ */
 
-export const VIEW_WIDTH = 1280;
-export const VIEW_HEIGHT = 720;
-export const HUD_HEIGHT = 56;
+export const TILE = 40;
+export const GRID_COLS = 30;
+export const GRID_ROWS = 15;
+export const ROOM_X = 40;
+export const ROOM_Y = 84;
+export const ROOM_W = GRID_COLS * TILE; // 1200
+export const ROOM_H = GRID_ROWS * TILE; // 600
 
-export const SAFE_CRACK_TIME = 3.0;
-export const TERMINAL_HACK_TIME = 1.0;
-export const SMOKE_DURATION = 6.5;
-export const SMOKE_RADIUS = 88;
-export const MAX_SMOKE = 2;
+export function tileCenter(col, row) {
+  return {
+    x: ROOM_X + col * TILE,
+    y: ROOM_Y + row * TILE,
+  };
+}
 
-const GUARD_FOV = (70 * Math.PI) / 180;
-const CAMERA_FOV = (55 * Math.PI) / 180;
+export function tileRect(col, row, wCols = 1, hRows = 1) {
+  return {
+    x: ROOM_X + col * TILE,
+    y: ROOM_Y + row * TILE,
+    w: wCols * TILE,
+    h: hRows * TILE,
+  };
+}
 
-const OUTER_WALLS = [
-  { x: 24, y: 64, w: 1232, h: 18 },
-  { x: 24, y: 686, w: 1232, h: 18 },
-  { x: 24, y: 64, w: 18, h: 640 },
-  { x: 1238, y: 64, w: 18, h: 640 },
-];
+function wp(col, row, pause = 0.65) {
+  const p = tileCenter(col, row);
+  return { x: p.x, y: p.y, pause };
+}
 
-export const LEVELS = [
+export const LEVEL_SPECS = [
   {
     id: 1,
-    name: 'ARCHIVE FOYER',
-    safeValue: 25000,
-    spawn: { x: 104, y: 616 },
-    exit: { x: 104, y: 134, r: 26 },
-    safe: { x: 1152, y: 384, r: 24 },
-    keycard: { x: 560, y: 618, r: 14 },
-    terminal: { x: 465, y: 140, r: 18 },
+    name: 'THE CONSULATE VAULT',
+    safeValue: 5000,
+    lootValue: 1200,
+    guardSpeed: 68,
+    guardRange: 235,
+    cameraRange: 245,
+    cameraSpeed: 0.95,
+    spawn: { col: 2.5, row: 12.2 },
+    exit: { col: 27.5, row: 12.5 },
+    safe: { col: 27.5, row: 7.5 },
+    terminal: { col: 9.5, row: 2.3 },
+    keycard: { col: 14.5, row: 12.3 },
+    doors: [{ col: 19, row: 7 }],
     vents: [
-      { id: 'A', x: 240, y: 612, pairIndex: 1, r: 20 },
-      { id: 'B', x: 1000, y: 612, pairIndex: 0, r: 20 },
+      { id: 'A1', col: 2.5, row: 2.3, targetIndex: 1 },
+      { id: 'A2', col: 22.5, row: 2.3, targetIndex: 0 },
     ],
-    door: { x: 900, y: 342, w: 18, h: 84 },
-    walls: [
-      { x: 180, y: 194, w: 340, h: 18 },
-      { x: 620, y: 194, w: 280, h: 18 },
-      { x: 900, y: 212, w: 18, h: 130 },
-      { x: 900, y: 426, w: 18, h: 120 },
-      { x: 180, y: 510, w: 230, h: 18 },
-      { x: 540, y: 340, w: 72, h: 88 },
+    loot: [
+      { col: 15.5, row: 2.3 },
+      { col: 22.2, row: 5.5 },
+      { col: 8.5, row: 12.2 },
     ],
     shadows: [
-      { x: 240, y: 90, w: 150, h: 92 },
-      { x: 660, y: 90, w: 150, h: 92 },
-      { x: 460, y: 344, w: 68, h: 80 },
-      { x: 960, y: 100, w: 110, h: 86 },
+      { col: 4.1, row: 10.7, w: 2.6, h: 2.3 },
+      { col: 11.4, row: 10.6, w: 3.1, h: 2.3 },
+      { col: 1.3, row: 5.3, w: 2.4, h: 2.4 },
+      { col: 15.2, row: 1.3, w: 2.5, h: 1.8 },
     ],
-    bonusLoot: [
-      { x: 760, y: 268, value: 2500 },
-      { x: 1150, y: 140, value: 2500 },
+    grid: [
+      '##############################',
+      '#.....#............#.........#',
+      '#.....#............#.........#',
+      '#.....#............#.........#',
+      '#..#..####....###..####..##..#',
+      '#..................#.........#',
+      '#......###.........#.........#',
+      '#......###.........#.........#',
+      '#......###.........#.........#',
+      '#..................#.........#',
+      '#..#...............#####..####',
+      '#..#.........................#',
+      '#............................#',
+      '#.....###..........###.......#',
+      '##############################',
     ],
     guards: [
       {
-        speed: 92,
-        range: 275,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 300, y: 290, pause: 0.5 },
-          { x: 780, y: 290, pause: 0.6 },
-          { x: 780, y: 470, pause: 0.5 },
-          { x: 300, y: 470, pause: 0.6 },
-        ],
+        waypoints: [wp(11.8, 5.5, 0.7), wp(17.2, 5.5, 0.7), wp(17.2, 9.5, 0.7), wp(11.8, 9.5, 0.7)],
+        startIndex: 0,
+        startAngle: 0,
       },
       {
-        speed: 96,
-        range: 270,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 980, y: 240, pause: 0.6 },
-          { x: 980, y: 520, pause: 0.5 },
-          { x: 1130, y: 520, pause: 0.6 },
-          { x: 1130, y: 240, pause: 0.5 },
-        ],
+        waypoints: [wp(21.5, 5.7, 0.6), wp(25.6, 5.7, 0.6), wp(25.6, 8.9, 0.6), wp(21.5, 8.9, 0.6)],
+        startIndex: 1,
+        startAngle: Math.PI / 2,
       },
     ],
     cameras: [
-      { x: 894, y: 218, minAngle: 2.02, maxAngle: 2.98, speed: 0.78, range: 305, fov: CAMERA_FOV },
+      { col: 13.5, row: 1.2, baseAngle: Math.PI / 2, sweepAmp: 0.62, phase: 0.4 },
+      { col: 28.75, row: 11.3, baseAngle: Math.PI, sweepAmp: 0.52, phase: 1.8 },
     ],
   },
   {
     id: 2,
-    name: 'BULLION EXCHANGE',
-    safeValue: 40000,
-    spawn: { x: 104, y: 616 },
-    exit: { x: 1160, y: 136, r: 26 },
-    safe: { x: 880, y: 376, r: 24 },
-    keycard: { x: 240, y: 145, r: 14 },
-    terminal: { x: 1140, y: 575, r: 18 },
+    name: 'ARCHIVE ANNEX',
+    safeValue: 7500,
+    lootValue: 1500,
+    guardSpeed: 84,
+    guardRange: 245,
+    cameraRange: 255,
+    cameraSpeed: 1.15,
+    spawn: { col: 2.2, row: 12.5 },
+    exit: { col: 27.5, row: 2.2 },
+    safe: { col: 27.3, row: 12.2 },
+    terminal: { col: 4.5, row: 2.2 },
+    keycard: { col: 15.5, row: 2.2 },
+    doors: [{ col: 20, row: 11 }],
     vents: [
-      { id: 'A', x: 485, y: 625, pairIndex: 1, r: 20 },
-      { id: 'B', x: 1185, y: 265, pairIndex: 0, r: 20 },
+      { id: 'B1', col: 2.3, row: 5.5, targetIndex: 1 },
+      { id: 'B2', col: 22.5, row: 5.5, targetIndex: 0 },
     ],
-    door: { x: 650, y: 336, w: 18, h: 84 },
-    walls: [
-      { x: 350, y: 82, w: 18, h: 210 },
-      { x: 350, y: 420, w: 18, h: 170 },
-      { x: 650, y: 240, w: 320, h: 18 },
-      { x: 650, y: 496, w: 120, h: 18 },
-      { x: 860, y: 496, w: 110, h: 18 },
-      { x: 650, y: 240, w: 18, h: 96 },
-      { x: 650, y: 420, w: 18, h: 94 },
-      { x: 952, y: 240, w: 18, h: 274 },
-      { x: 470, y: 340, w: 64, h: 80 },
-      { x: 1060, y: 340, w: 64, h: 80 },
+    loot: [
+      { col: 11.5, row: 2.2 },
+      { col: 15.5, row: 7.5 },
+      { col: 22.5, row: 12.2 },
     ],
     shadows: [
-      { x: 60, y: 240, w: 120, h: 120 },
-      { x: 410, y: 92, w: 160, h: 82 },
-      { x: 250, y: 580, w: 150, h: 92 },
-      { x: 1035, y: 195, w: 110, h: 95 },
+      { col: 4.4, row: 11.3, w: 2.5, h: 2.2 },
+      { col: 10.5, row: 11.4, w: 3.0, h: 2.1 },
+      { col: 7.3, row: 5.0, w: 2.4, h: 2.4 },
+      { col: 19.3, row: 1.4, w: 2.4, h: 2.1 },
     ],
-    bonusLoot: [
-      { x: 240, y: 355, value: 4000 },
-      { x: 800, y: 140, value: 4000 },
+    grid: [
+      '##############################',
+      '#.......#..........#.........#',
+      '#.......#..........#.........#',
+      '#.......#..........#.........#',
+      '#..###..###...###..####..##..#',
+      '#............................#',
+      '#.....##....###........###...#',
+      '#.....##....###........###...#',
+      '#............................#',
+      '#..#........###....#####..####',
+      '#..#...............#.........#',
+      '#..####............#.........#',
+      '#..................#.........#',
+      '#..........###.....#.........#',
+      '##############################',
     ],
     guards: [
       {
-        speed: 104,
-        range: 275,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 215, y: 230, pause: 0.5 },
-          { x: 215, y: 560, pause: 0.5 },
-        ],
+        waypoints: [wp(8.5, 5.2, 0.55), wp(18.5, 5.2, 0.55), wp(18.5, 8.3, 0.55), wp(8.5, 8.3, 0.55)],
+        startIndex: 0,
+        startAngle: 0,
       },
       {
-        speed: 108,
-        range: 275,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 425, y: 205, pause: 0.45 },
-          { x: 590, y: 205, pause: 0.45 },
-          { x: 590, y: 550, pause: 0.45 },
-          { x: 425, y: 550, pause: 0.45 },
-        ],
+        waypoints: [wp(11.5, 2.3, 0.55), wp(17.5, 2.3, 0.55)],
+        startIndex: 0,
+        startAngle: Math.PI,
       },
       {
-        speed: 112,
-        range: 280,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 705, y: 575, pause: 0.45 },
-          { x: 1015, y: 575, pause: 0.35 },
-          { x: 1015, y: 175, pause: 0.45 },
-          { x: 705, y: 175, pause: 0.45 },
-          { x: 1015, y: 175, pause: 0.3 },
-          { x: 1015, y: 575, pause: 0.3 },
-        ],
+        waypoints: [wp(22.0, 10.6, 0.5), wp(26.5, 10.6, 0.5), wp(26.5, 13.0, 0.5), wp(22.0, 13.0, 0.5)],
+        startIndex: 2,
+        startAngle: -Math.PI / 2,
       },
     ],
     cameras: [
-      { x: 344, y: 98, minAngle: 1.95, maxAngle: 3.0, speed: 0.85, range: 295, fov: CAMERA_FOV },
-      { x: 944, y: 492, minAngle: 1.0, maxAngle: 2.3, speed: 0.9, range: 300, fov: CAMERA_FOV },
+      { col: 2.2, row: 8.5, baseAngle: 0, sweepAmp: 0.55, phase: 0.2 },
+      { col: 20.5, row: 4.8, baseAngle: Math.PI / 2, sweepAmp: 0.65, phase: 1.5 },
+      { col: 28.75, row: 3.8, baseAngle: Math.PI, sweepAmp: 0.55, phase: 2.7 },
     ],
   },
   {
     id: 3,
-    name: 'NIGHT LEDGER VAULT',
-    safeValue: 65000,
-    spawn: { x: 104, y: 384 },
-    exit: { x: 1165, y: 136, r: 26 },
-    safe: { x: 695, y: 376, r: 24 },
-    keycard: { x: 1110, y: 615, r: 14 },
-    terminal: { x: 185, y: 135, r: 18 },
+    name: 'CENTRAL LEDGER HOUSE',
+    safeValue: 10000,
+    lootValue: 2000,
+    guardSpeed: 98,
+    guardRange: 255,
+    cameraRange: 265,
+    cameraSpeed: 1.35,
+    spawn: { col: 2.2, row: 7.5 },
+    exit: { col: 27.5, row: 7.5 },
+    safe: { col: 26.8, row: 2.5 },
+    terminal: { col: 8.5, row: 12.3 },
+    keycard: { col: 8.5, row: 2.3 },
+    doors: [{ col: 21, row: 3 }],
     vents: [
-      { id: 'A', x: 120, y: 625, pairIndex: 1, r: 20 },
-      { id: 'B', x: 760, y: 135, pairIndex: 0, r: 20 },
+      { id: 'C1', col: 2.3, row: 2.3, targetIndex: 1 },
+      { id: 'C2', col: 22.8, row: 12.2, targetIndex: 0 },
     ],
-    door: { x: 500, y: 340, w: 18, h: 80 },
-    walls: [
-      { x: 290, y: 180, w: 18, h: 140 },
-      { x: 290, y: 440, w: 18, h: 140 },
-      { x: 970, y: 180, w: 18, h: 140 },
-      { x: 970, y: 440, w: 18, h: 140 },
-      { x: 500, y: 250, w: 280, h: 18 },
-      { x: 500, y: 482, w: 96, h: 18 },
-      { x: 684, y: 482, w: 96, h: 18 },
-      { x: 500, y: 250, w: 18, h: 90 },
-      { x: 500, y: 420, w: 18, h: 80 },
-      { x: 762, y: 250, w: 18, h: 250 },
+    loot: [
+      { col: 14.5, row: 2.3 },
+      { col: 14.5, row: 12.3 },
+      { col: 24.5, row: 12.3 },
     ],
     shadows: [
-      { x: 190, y: 585, w: 170, h: 90 },
-      { x: 550, y: 585, w: 180, h: 90 },
-      { x: 860, y: 585, w: 180, h: 90 },
-      { x: 500, y: 92, w: 170, h: 84 },
+      { col: 4.2, row: 6.3, w: 2.2, h: 2.4 },
+      { col: 11.2, row: 5.5, w: 2.5, h: 4.0 },
+      { col: 17.2, row: 1.3, w: 2.4, h: 2.2 },
+      { col: 17.2, row: 11.3, w: 2.4, h: 2.2 },
     ],
-    bonusLoot: [
-      { x: 120, y: 145, value: 5000 },
-      { x: 440, y: 625, value: 5000 },
-      { x: 1110, y: 384, value: 5000 },
+    grid: [
+      '##############################',
+      '#.....#...........#..........#',
+      '#.....#...........#..........#',
+      '#..#..#...........#..........#',
+      '#..#..###....###..####..###..#',
+      '#..#.........................#',
+      '#.......##....##.....####....#',
+      '#.......##....##.....####....#',
+      '#.......##....##.....####....#',
+      '#..#.........................#',
+      '#..#..###....###..####..###..#',
+      '#..#..#...........#..........#',
+      '#.....#...........#..........#',
+      '#.....#...........#..........#',
+      '##############################',
     ],
     guards: [
       {
-        speed: 114,
-        range: 270,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 190, y: 210, pause: 0.4 },
-          { x: 190, y: 540, pause: 0.4 },
-          { x: 400, y: 540, pause: 0.4 },
-          { x: 400, y: 210, pause: 0.4 },
-        ],
+        waypoints: [wp(7.2, 5.2, 0.45), wp(19.2, 5.2, 0.45), wp(19.2, 9.6, 0.45), wp(7.2, 9.6, 0.45)],
+        startIndex: 0,
+        startAngle: 0,
       },
       {
-        speed: 122,
-        range: 275,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 400, y: 170, pause: 0.35 },
-          { x: 880, y: 170, pause: 0.35 },
-        ],
+        waypoints: [wp(11.2, 2.3, 0.45), wp(17.2, 2.3, 0.45)],
+        startIndex: 1,
+        startAngle: Math.PI,
       },
       {
-        speed: 122,
-        range: 275,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 880, y: 560, pause: 0.35 },
-          { x: 400, y: 560, pause: 0.35 },
-        ],
+        waypoints: [wp(22.5, 2.2, 0.45), wp(28.0, 2.2, 0.45), wp(28.0, 4.8, 0.45), wp(22.5, 4.8, 0.45)],
+        startIndex: 2,
+        startAngle: Math.PI,
       },
       {
-        speed: 118,
-        range: 270,
-        fov: GUARD_FOV,
-        waypoints: [
-          { x: 880, y: 210, pause: 0.4 },
-          { x: 880, y: 540, pause: 0.4 },
-          { x: 1090, y: 540, pause: 0.4 },
-          { x: 1090, y: 210, pause: 0.4 },
-        ],
+        waypoints: [wp(21.5, 11.5, 0.45), wp(27.5, 11.5, 0.45), wp(27.5, 13.0, 0.45), wp(21.5, 13.0, 0.45)],
+        startIndex: 0,
+        startAngle: 0,
       },
     ],
     cameras: [
-      { x: 496, y: 248, minAngle: 2.2, maxAngle: 3.3, speed: 0.92, range: 290, fov: CAMERA_FOV },
-      { x: 756, y: 478, minAngle: 1.9, maxAngle: 2.95, speed: 0.96, range: 285, fov: CAMERA_FOV },
-      { x: 992, y: 98, minAngle: 0.35, maxAngle: 1.45, speed: 0.96, range: 300, fov: CAMERA_FOV },
+      { col: 10.5, row: 1.2, baseAngle: Math.PI / 2, sweepAmp: 0.65, phase: 0.1 },
+      { col: 10.5, row: 13.8, baseAngle: -Math.PI / 2, sweepAmp: 0.65, phase: 1.4 },
+      { col: 20.5, row: 5.2, baseAngle: 0, sweepAmp: 0.6, phase: 2.2 },
+      { col: 28.75, row: 9.5, baseAngle: Math.PI, sweepAmp: 0.58, phase: 3.1 },
     ],
   },
 ];
 
-export function buildLevelData(index) {
-  const spec = LEVELS[index];
-  const walls = OUTER_WALLS.concat(spec.walls.map((w) => ({ ...w })));
+/**
+ * Builds mutable runtime level geometry and entities from a spec.
+ */
+export function buildLevelInstance(levelIndex) {
+  const spec = LEVEL_SPECS[Math.max(0, Math.min(LEVEL_SPECS.length - 1, levelIndex))];
+  const walls = [];
+  const wallSet = new Set();
+
+  for (let r = 0; r < GRID_ROWS; r++) {
+    const rowStr = spec.grid[r];
+    for (let c = 0; c < GRID_COLS; c++) {
+      if (rowStr[c] === '#') {
+        walls.push(tileRect(c, r));
+        wallSet.add(`${c},${r}`);
+      }
+    }
+  }
+
+  const doors = spec.doors.map((d) => ({
+    ...tileRect(d.col, d.row),
+    col: d.col,
+    row: d.row,
+    cx: ROOM_X + (d.col + 0.5) * TILE,
+    cy: ROOM_Y + (d.row + 0.5) * TILE,
+    open: false,
+  }));
+
+  const vents = spec.vents.map((v) => ({
+    id: v.id,
+    ...tileCenter(v.col, v.row),
+    targetIndex: v.targetIndex,
+    radius: 16,
+  }));
+
+  const safePos = tileCenter(spec.safe.col, spec.safe.row);
+  const safe = {
+    x: safePos.x,
+    y: safePos.y,
+    size: 38,
+    value: spec.safeValue,
+    progress: 0,
+    duration: 3.0,
+    cracked: false,
+    pauseTimer: 0,
+  };
+
+  const exitPos = tileCenter(spec.exit.col, spec.exit.row);
+  const exit = {
+    x: exitPos.x,
+    y: exitPos.y,
+    w: 44,
+    h: 44,
+  };
+
+  const termPos = tileCenter(spec.terminal.col, spec.terminal.row);
+  const terminal = {
+    x: termPos.x,
+    y: termPos.y,
+    radius: 17,
+    hacked: false,
+  };
+
+  const keyPos = tileCenter(spec.keycard.col, spec.keycard.row);
+  const keycard = {
+    x: keyPos.x,
+    y: keyPos.y,
+    radius: 14,
+    collected: false,
+  };
+
+  const loot = spec.loot.map((l, idx) => ({
+    id: idx,
+    ...tileCenter(l.col, l.row),
+    value: spec.lootValue,
+    radius: 13,
+    collected: false,
+  }));
+
+  const shadowZones = spec.shadows.map((s) => tileRect(s.col, s.row, s.w, s.h));
+
   return {
-    id: spec.id,
-    name: spec.name,
+    spec,
     walls,
-    shadows: spec.shadows.map((s) => ({ ...s })),
-    door: { ...spec.door, open: false },
-    vents: spec.vents.map((v) => ({ ...v })),
-    terminal: { ...spec.terminal, hacked: false, progress: 0 },
-    keycard: { ...spec.keycard, taken: false },
-    safe: { ...spec.safe, value: spec.safeValue, cracked: false, progress: 0 },
-    exit: { ...spec.exit },
-    bonusLoot: spec.bonusLoot.map((item) => ({ ...item, r: 13, taken: false })),
-    spawn: { ...spec.spawn },
-    guardSpecs: spec.guards,
-    cameraSpecs: spec.cameras,
+    wallSet,
+    doors,
+    vents,
+    safe,
+    exit,
+    terminal,
+    keycard,
+    loot,
+    shadowZones,
+    smokeClouds: [],
+    spawn: tileCenter(spec.spawn.col, spec.spawn.row),
   };
 }
 
 export function getSolidRects(level) {
-  return level.door.open ? level.walls : level.walls.concat(level.door);
+  const solids = level.walls.slice();
+  for (const door of level.doors) {
+    if (!door.open) solids.push(door);
+  }
+  return solids;
 }
 
-export function resolveCircleRects(entity, radius, rects) {
-  for (let i = 0; i < rects.length; i += 1) {
-    const r = rects[i];
-    const cx = Math.max(r.x, Math.min(entity.x, r.x + r.w));
-    const cy = Math.max(r.y, Math.min(entity.y, r.y + r.h));
-    const dx = entity.x - cx;
-    const dy = entity.y - cy;
-    const distSq = dx * dx + dy * dy;
-    if (distSq < radius * radius) {
-      if (distSq > 0.0001) {
-        const dist = Math.sqrt(distSq);
-        const push = radius - dist;
-        entity.x += (dx / dist) * push;
-        entity.y += (dy / dist) * push;
-      } else {
-        const left = Math.abs(entity.x - r.x);
-        const right = Math.abs(r.x + r.w - entity.x);
-        const top = Math.abs(entity.y - r.y);
-        const bottom = Math.abs(r.y + r.h - entity.y);
-        const minEdge = Math.min(left, right, top, bottom);
-        if (minEdge === left) entity.x = r.x - radius;
-        else if (minEdge === right) entity.x = r.x + r.w + radius;
-        else if (minEdge === top) entity.y = r.y - radius;
-        else entity.y = r.y + r.h + radius;
-      }
+export function isPointInShadow(x, y, level) {
+  for (const z of level.shadowZones) {
+    if (x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h) {
+      return true;
     }
   }
+  return false;
 }
 
-function rayAxisSlab(origin, dir, minB, maxB, tmin, tmax) {
-  if (Math.abs(dir) < 1e-8) {
-    if (origin < minB || origin > maxB) return null;
-    return [tmin, tmax];
+export function isPointInSmoke(x, y, level) {
+  for (const s of level.smokeClouds) {
+    const dx = x - s.x;
+    const dy = y - s.y;
+    if (dx * dx + dy * dy <= s.radius * s.radius) return true;
   }
-  const inv = 1 / dir;
-  let t1 = (minB - origin) * inv;
-  let t2 = (maxB - origin) * inv;
-  if (t1 > t2) {
-    const tmp = t1;
-    t1 = t2;
-    t2 = tmp;
+  return false;
+}
+
+function rayRectDistance(ox, oy, dx, dy, rect, maxDist) {
+  let tmin = 0;
+  let tmax = maxDist;
+
+  if (Math.abs(dx) < 1e-8) {
+    if (ox < rect.x || ox > rect.x + rect.w) return maxDist;
+  } else {
+    const inv = 1 / dx;
+    let t1 = (rect.x - ox) * inv;
+    let t2 = (rect.x + rect.w - ox) * inv;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return maxDist;
   }
-  const nextMin = Math.max(tmin, t1);
-  const nextMax = Math.min(tmax, t2);
-  return nextMin > nextMax ? null : [nextMin, nextMax];
+
+  if (Math.abs(dy) < 1e-8) {
+    if (oy < rect.y || oy > rect.y + rect.h) return maxDist;
+  } else {
+    const inv = 1 / dy;
+    let t1 = (rect.y - oy) * inv;
+    let t2 = (rect.y + rect.h - oy) * inv;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return maxDist;
+  }
+
+  return tmin >= 0 && tmin < maxDist ? tmin : maxDist;
 }
 
-function rayRectDistance(ox, oy, dx, dy, maxDist, rect) {
-  const xRange = rayAxisSlab(ox, dx, rect.x, rect.x + rect.w, 0, maxDist);
-  if (!xRange) return maxDist;
-  const yRange = rayAxisSlab(oy, dy, rect.y, rect.y + rect.h, xRange[0], xRange[1]);
-  if (!yRange) return maxDist;
-  return yRange[0] >= 0 && yRange[0] < maxDist ? yRange[0] : maxDist;
-}
-
-function rayCircleDistance(ox, oy, dx, dy, maxDist, cx, cy, r) {
+function rayCircleDistance(ox, oy, dx, dy, cx, cy, r, maxDist) {
   const fx = ox - cx;
   const fy = oy - cy;
-  const b = 2 * (fx * dx + fy * dy);
   const c = fx * fx + fy * fy - r * r;
-  if (c <= 0) return 0;
+  if (c <= 0) return 0; // Origin is inside smoke
+  const b = 2 * (fx * dx + fy * dy);
   const disc = b * b - 4 * c;
   if (disc < 0) return maxDist;
-  const t = (-b - Math.sqrt(disc)) * 0.5;
+  const sqrtDisc = Math.sqrt(disc);
+  const t = (-b - sqrtDisc) / 2;
   return t >= 0 && t < maxDist ? t : maxDist;
 }
 
-export function castVisionRay(ox, oy, angle, maxDist, rects, smokes) {
+/**
+ * Casts a ray from (ox, oy) along unit direction (dx, dy) against walls, closed doors, and smoke.
+ */
+export function castVisionRay(ox, oy, angle, maxDist, level) {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
   let best = maxDist;
-  for (let i = 0; i < rects.length; i += 1) {
-    const d = rayRectDistance(ox, oy, dx, dy, best, rects[i]);
-    if (d < best) best = d;
+
+  for (const w of level.walls) {
+    const t = rayRectDistance(ox, oy, dx, dy, w.x, w.y, w.w, w.h, best);
+    if (t < best) best = t;
   }
-  if (smokes) {
-    for (let i = 0; i < smokes.length; i += 1) {
-      const s = smokes[i];
-      const d = rayCircleDistance(ox, oy, dx, dy, best, s.x, s.y, s.radius * 0.86);
-      if (d < best) best = d;
+  for (const d of level.doors) {
+    if (!d.open) {
+      const t = rayRectDistance(ox, oy, dx, dy, d.x, d.y, d.w, d.h, best);
+      if (t < best) best = t;
     }
   }
+  for (const s of level.smokeClouds) {
+    const t = rayCircleDistance(ox, oy, dx, dy, s.x, s.y, s.radius, best);
+    if (t < best) best = t;
+  }
+
   return best;
 }
 
-export function buildVisionPolygon(ox, oy, angle, fov, range, rects, smokes, steps = 28) {
-  const pts = [{ x: ox, y: oy }];
-  const start = angle - fov * 0.5;
-  const inc = fov / steps;
-  for (let i = 0; i <= steps; i += 1) {
-    const a = start + inc * i;
-    const dist = castVisionRay(ox, oy, a, range, rects, smokes);
-    pts.push({
+/**
+ * Computes a raycasted vision cone polygon for guards or cameras.
+ */
+export function computeVisionPolygon(ox, oy, facingAngle, fovRad, maxRange, level, steps = 40) {
+  const points = [{ x: ox, y: oy }];
+  const start = facingAngle - fovRad / 2;
+  for (let i = 0; i <= steps; i++) {
+    const a = start + (fovRad * i) / steps;
+    const dist = castVisionRay(ox, oy, a, maxRange, level);
+    points.push({
       x: ox + Math.cos(a) * dist,
       y: oy + Math.sin(a) * dist,
     });
   }
-  return pts;
+  return points;
 }
 
-export function pointInRect(px, py, rect) {
-  return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
+export function hasLineOfSight(x1, y1, x2, y2, level) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-4) return true;
+  const angle = Math.atan2(dy, dx);
+  const hit = castVisionRay(x1, y1, angle, dist, level);
+  return hit >= dist - 3;
+}
+
+/**
+ * Resolves circle vs AABB collision so the thief slides cleanly around wall corners.
+ */
+export function resolveCircleWallCollisions(entity, level) {
+  const solids = getSolidRects(level);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const r of solids) {
+      const closestX = Math.max(r.x, Math.min(entity.x, r.x + r.w));
+      const closestY = Math.max(r.y, Math.min(entity.y, r.y + r.h));
+      const dx = entity.x - closestX;
+      const dy = entity.y - closestY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < entity.radius * entity.radius) {
+        const dist = Math.sqrt(distSq);
+        if (dist > 1e-5) {
+          const push = entity.radius - dist;
+          entity.x += (dx / dist) * push;
+          entity.y += (dy / dist) * push;
+        } else {
+          // Fallback push out along shallowest axis
+          const left = entity.x - r.x;
+          const right = r.x + r.w - entity.x;
+          const top = entity.y - r.y;
+          const bottom = r.y + r.h - entity.y;
+          const minPen = Math.min(left, right, top, bottom);
+          if (minPen === left) entity.x = r.x - entity.radius;
+          else if (minPen === right) entity.x = r.x + r.w + entity.radius;
+          else if (minPen === top) entity.y = r.y - entity.radius;
+          else entity.y = r.y + r.h + entity.radius;
+        }
+      }
+    }
+  }
 }
